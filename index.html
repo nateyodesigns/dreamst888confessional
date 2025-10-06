@@ -1,24 +1,32 @@
 <!doctype html>
 <html>
 <head>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;1,100;1,200;1,300;1,400;1,500;1,600;1,700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>Confessional of Future Dreams</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;1,100;1,200;1,300;1,400;1,500;1,600;1,700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+
 <script src="https://cdn.jsdelivr.net/npm/lamejs@1.2.1/lame.min.js"></script>
+
+<!-- Firebase (compat SDK for simpler migration) -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-storage-compat.js"></script>
+
 <style>
+/* keep your existing styles (slightly trimmed) */
 body {
   font-family: "IBM Plex Mono", monospace;
-  background: url('https://i-p.rmcdn.net/6564f807fd804900278f36db/5175659/image-252d07f8-1150-4519-a6fe-f76626da04c4.png?e=webp&nll=true&cX=0&cY=108&cW=1978&cH=881') no-repeat center center fixed;
+  background: url('https://i-p.rmcdn.net/6564f807fd804900278f36db/5175659/image-252d07f8-1150-4519-a6fe-f76626da04c4.png') no-repeat center center fixed;
   background-size: cover;
   color: white;
   text-align: center;
   padding: 40px;
 }
 h2 { font-size: 36px; margin-bottom: 20px; }
-.instrument-serif-regular { font-family: "Instrument Serif", serif; font-weight: 400; font-style: normal; }
 button {
   font-family: "IBM Plex Mono", monospace;
   background: rgba(255,255,255,0.15);
@@ -37,13 +45,7 @@ button:disabled { opacity: 0.4; cursor: default; }
 .timer { font-size: 18px; margin-top: 12px; }
 audio { display: block; margin: 20px auto; width: 100%; max-width: 400px; }
 .status { margin-top: 12px; font-size: 17px; }
-#photoPreview { 
-  display: none; 
-  margin: 12px auto 0 auto; /* top 12px, centered horizontally */
-  max-width:300px; 
-  border-radius:10px; 
-  display: block; /* ensure it's block for centering */
-}
+#photoPreview { display: none; margin: 12px auto 0 auto; max-width:300px; border-radius:10px; display:block; }
 .page { display: none; }
 .page.active { display: block; }
 input[type="text"] {
@@ -83,7 +85,7 @@ input[type="text"] {
   <p id="audioDescription">🔴 PRESS the record button, then 🗣️ SPEAK to answer the question:</p>
   <p id="audioPrompt">What dreams do you have for the future?</p>
   <div>
-    <button id="recordBtn">🔴 Record</button>
+    <button id="recordBtn">Record</button>
     <button id="pauseBtn" disabled>Pause</button>
     <button id="stopBtn" disabled>Stop</button>
     <button id="nextBtn" disabled>Next</button>
@@ -96,7 +98,7 @@ input[type="text"] {
 <!-- Page 2: Photo Capture -->
 <div id="page2" class="page">
   <p id="audioDescription">📸 Take a picture so the Pigeon Historian Scientists can preserve your dream.</p>
-  <button id="photoBtn">Take Picture</button>
+  <button id="photoBtn" disabled>Take Picture</button>
   <button id="retakeBtn" style="display:none;">Retake Photo</button>
   <br>
   <img id="photoPreview" />
@@ -106,21 +108,57 @@ input[type="text"] {
 </div>
 
 <script>
+/* ============================================================
+   FIREBASE SETUP - REPLACE the firebaseConfig with your values
+   Get the config from Firebase Console > Project settings > SDK setup
+   ============================================================ */
+// For Firebase JS SDK v7.20.0 and later, measurementId is optional
+const firebaseConfig = {
+  apiKey: "AIzaSyArHIGnKUbb89YtEQApFccMj80quo4X5eY",
+  authDomain: "confessionalclient1.firebaseapp.com",
+  projectId: "confessionalclient1",
+  storageBucket: "confessionalclient1.firebasestorage.app",
+  messagingSenderId: "201001099173",
+  appId: "1:201001099173:web:83c5b201140054c501124c",
+  measurementId: "G-VMSQZFTMP9"
+};
+
+// init firebase
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const storage = firebase.storage();
+
+/* Sign in anonymously so uploads can be secured by storage rules.
+   If you prefer interactive / named auth later, swap this out. */
+auth.signInAnonymously().catch(err => {
+  console.warn('Firebase anonymous sign-in failed:', err);
+});
+
+/* ============================================================
+   App UI + recording/photo logic (adapted from your existing)
+   ============================================================ */
+document.addEventListener('DOMContentLoaded', () => {
+
 let userName = '';
 const MAX_SECONDS = 30;
-let mediaRecorder, audioStream, chunks=[], recordedBlob=null, seconds=0, timerInterval=null;
-let photoBlob=null;
+let mediaRecorder, audioStream, chunks = [];
+let recordedBlob = null;
+let timerInterval = null, seconds = 0;
+let photoBlob = null;
 
-// Pages
+// timers
+let submitResetTimer = null;
+let inactivityTimer = null;
+let inactivityCountdownInterval = null;
+
+// elements
 const page0 = document.getElementById('page0');
 const page1 = document.getElementById('page1');
 const page2 = document.getElementById('page2');
 
-// Page0 elements
 const userNameInput = document.getElementById('userName');
 const introNextBtn = document.getElementById('introNextBtn');
 
-// Page1 elements
 const recordBtn = document.getElementById('recordBtn');
 const pauseBtn = document.getElementById('pauseBtn');
 const stopBtn = document.getElementById('stopBtn');
@@ -129,151 +167,294 @@ const player = document.getElementById('player');
 const status1 = document.getElementById('status1');
 const timerEl = document.getElementById('timer');
 
-// Page2 elements
 const photoBtn = document.getElementById('photoBtn');
 const retakeBtn = document.getElementById('retakeBtn');
 const photoPreview = document.getElementById('photoPreview');
 const submitBtn = document.getElementById('submitBtn');
 const status2 = document.getElementById('status2');
 
-// Enable next when name is entered
+// inactivity overlay
+const inactivityOverlay = document.createElement('div');
+inactivityOverlay.style.position='fixed';
+inactivityOverlay.style.top='0'; inactivityOverlay.style.left='0';
+inactivityOverlay.style.width='100%'; inactivityOverlay.style.height='100%';
+inactivityOverlay.style.background='rgba(0,0,0,0.85)';
+inactivityOverlay.style.color='white';
+inactivityOverlay.style.fontSize='36px';
+inactivityOverlay.style.display='flex';
+inactivityOverlay.style.flexDirection='column';
+inactivityOverlay.style.justifyContent='center';
+inactivityOverlay.style.alignItems='center';
+inactivityOverlay.style.zIndex='9999';
+inactivityOverlay.style.display='none';
+document.body.appendChild(inactivityOverlay);
+
+let inactivityCountdown = 5;
+
+// reset app
+function resetToIntro() {
+  page0.classList.add('active');
+  page1.classList.remove('active');
+  page2.classList.remove('active');
+  userNameInput.value = '';
+  introNextBtn.disabled = true;
+  player.src = '';
+  photoPreview.src = '';
+  photoPreview.style.display='none';
+  retakeBtn.style.display='none';
+  submitBtn.disabled = true;
+  status1.textContent = '';
+  status2.textContent = '';
+  recordedBlob = null;
+  photoBlob = null;
+  clearTimeout(submitResetTimer);
+  clearTimeout(inactivityTimer);
+  clearInterval(inactivityCountdownInterval);
+  inactivityOverlay.style.display='none';
+  resetInactivityTimer();
+}
+
+// enable next when name typed
 userNameInput.addEventListener('input', ()=>{
   introNextBtn.disabled = userNameInput.value.trim()==='';
 });
 
-// Intro Next button
+// go to recording
 introNextBtn.onclick = ()=>{
   userName = userNameInput.value.trim();
+  if(!userName) return;
   page0.classList.remove('active');
   page1.classList.add('active');
 };
 
-// ----- Audio Recording -----
+// TIMER functions
 function updateTimer() {
   seconds++;
-  if(seconds >= MAX_SECONDS) stopRecording();
-  const mm = String(Math.floor(seconds/60)).padStart(2,'0');
-  const ss = String(seconds%60).padStart(2,'0');
+  if (seconds >= MAX_SECONDS) stopRecording();
+  const mm = String(Math.floor(seconds / 60)).padStart(2,'0');
+  const ss = String(seconds % 60).padStart(2,'0');
   timerEl.textContent = `${mm}:${ss} / 00:30`;
 }
 
+// RECORDING
 async function startRecording() {
-  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
-    alert('Microphone not supported');
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    alert('Microphone not supported on this device.');
     return;
   }
   try {
-    audioStream = await navigator.mediaDevices.getUserMedia({audio:true});
+    audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
     mediaRecorder = new MediaRecorder(audioStream);
-  } catch(e){
-    status1.textContent='Mic access denied: '+e.message;
+  } catch (err) {
+    status1.textContent = 'Microphone access denied: ' + err.message;
     return;
   }
 
-  chunks=[]; seconds=0;
-  timerInterval=setInterval(updateTimer,1000);
-  mediaRecorder.ondataavailable = e => chunks.push(e.data);
-  mediaRecorder.onstop = convertToMp3;
+  chunks = [];
+  seconds = 0;
+  timerEl.textContent = '00:00 / 00:30';
+  timerInterval = setInterval(updateTimer, 1000);
+
+  mediaRecorder.ondataavailable = e => {
+    if (e.data && e.data.size > 0) chunks.push(e.data);
+  };
+  mediaRecorder.onstop = () => {
+    // convert to mp3
+    convertToMp3();
+  };
 
   mediaRecorder.start();
-  status1.textContent='Recording...';
-  recordBtn.disabled=true; pauseBtn.disabled=false; stopBtn.disabled=false; nextBtn.disabled=true;
+  status1.textContent = 'Recording...';
+  recordBtn.disabled = true;
+  pauseBtn.disabled = false;
+  stopBtn.disabled = false;
 }
 
-function pauseResume(){
-  if(!mediaRecorder) return;
-  if(mediaRecorder.state==='recording'){
-    mediaRecorder.pause(); pauseBtn.textContent='Resume'; clearInterval(timerInterval); status1.textContent='Paused';
-  } else if(mediaRecorder.state==='paused'){
-    mediaRecorder.resume(); pauseBtn.textContent='Pause'; timerInterval=setInterval(updateTimer,1000); status1.textContent='Recording...';
-  }
-}
-
-function stopRecording(){
-  if(mediaRecorder && (mediaRecorder.state==='recording'||mediaRecorder.state==='paused')){
-    mediaRecorder.stop();
+function pauseResume() {
+  if (!mediaRecorder) return;
+  if (mediaRecorder.state === 'recording' && mediaRecorder.pause) {
+    mediaRecorder.pause();
+    pauseBtn.textContent = 'Resume';
     clearInterval(timerInterval);
-    pauseBtn.disabled=true; stopBtn.disabled=true;
+    status1.textContent = 'Paused';
+  } else if (mediaRecorder.state === 'paused' && mediaRecorder.resume) {
+    mediaRecorder.resume();
+    pauseBtn.textContent = 'Pause';
+    timerInterval = setInterval(updateTimer, 1000);
+    status1.textContent = 'Recording...';
   }
 }
 
-async function convertToMp3(){
-  const blob = new Blob(chunks,{type:'audio/webm'});
-  const arrayBuffer = await blob.arrayBuffer();
-  const audioCtx = new AudioContext();
-  const decoded = await audioCtx.decodeAudioData(arrayBuffer);
-  const channelData = decoded.getChannelData(0);
-
-  const mp3encoder = new lamejs.Mp3Encoder(1, decoded.sampleRate, 128);
-  const samples = new Int16Array(channelData.length);
-  for(let i=0;i<channelData.length;i++) samples[i] = channelData[i]*32767;
-  const mp3Data = [];
-  const chunkSize = 1152;
-  for(let i=0;i<samples.length;i+=chunkSize){
-    const sampleChunk = samples.subarray(i,i+chunkSize);
-    const mp3buf = mp3encoder.encodeBuffer(sampleChunk);
-    if(mp3buf.length>0) mp3Data.push(mp3buf);
+function stopRecording() {
+  if (mediaRecorder && (mediaRecorder.state === 'recording' || mediaRecorder.state === 'paused')) {
+    mediaRecorder.stop();
   }
-  const end = mp3encoder.flush();
-  if(end.length>0) mp3Data.push(end);
-
-  recordedBlob = new Blob(mp3Data,{type:'audio/mp3'});
-  player.src = URL.createObjectURL(recordedBlob);
-  status1.textContent='Audio ready!';
-  nextBtn.disabled=false;
-
-  if(audioStream) audioStream.getTracks().forEach(t=>t.stop());
 }
 
-// Next button: download audio and go to photo page
+async function convertToMp3() {
+  // convert recorded chunks (webm/ogg) to mp3 using lamejs
+  const blob = new Blob(chunks, { type: 'audio/webm' });
+  try {
+    const arrayBuffer = await blob.arrayBuffer();
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const decoded = await audioCtx.decodeAudioData(arrayBuffer);
+    const channelData = decoded.getChannelData(0);
+
+    const mp3encoder = new lamejs.Mp3Encoder(1, decoded.sampleRate, 128);
+    const samples = new Int16Array(channelData.length);
+    for (let i = 0; i < channelData.length; i++) samples[i] = Math.max(-1, Math.min(1, channelData[i])) * 32767;
+    const mp3Data = [];
+    const chunkSize = 1152;
+    for (let i = 0; i < samples.length; i += chunkSize) {
+      const sampleChunk = samples.subarray(i, i + chunkSize);
+      const mp3buf = mp3encoder.encodeBuffer(sampleChunk);
+      if (mp3buf.length > 0) mp3Data.push(mp3buf);
+    }
+    const end = mp3encoder.flush();
+    if (end.length > 0) mp3Data.push(end);
+
+    recordedBlob = new Blob(mp3Data, { type: 'audio/mp3' });
+    player.src = URL.createObjectURL(recordedBlob);
+    status1.textContent = 'Audio ready!';
+    nextBtn.disabled = false;
+  } catch (err) {
+    console.error('MP3 conversion failed', err);
+    // fallback: use the original chunk blob if conversion fails
+    recordedBlob = blob;
+    player.src = URL.createObjectURL(recordedBlob);
+    status1.textContent = 'Audio ready (webm fallback).';
+    nextBtn.disabled = false;
+  } finally {
+    if (audioStream) audioStream.getTracks().forEach(t => t.stop());
+    clearInterval(timerInterval);
+    pauseBtn.disabled = true;
+    stopBtn.disabled = true;
+    recordBtn.disabled = false;
+    pauseBtn.textContent = 'Pause';
+  }
+}
+
+// go to photo page
 nextBtn.onclick = ()=>{
-  if(!recordedBlob) return;
-  const a=document.createElement('a');
-  a.href = URL.createObjectURL(recordedBlob);
-  a.download=`${userName}_AudioConfession.mp3`;
-  document.body.appendChild(a); a.click(); document.body.removeChild(a);
-
-  page1.classList.remove('active'); page2.classList.add('active');
+  if (!recordedBlob) return;
+  page1.classList.remove('active');
+  page2.classList.add('active');
+  // enable photo button when on page 2
+  photoBtn.disabled = false;
 };
 
-// ----- Photo Capture -----
-photoBtn.onclick = takePhoto;
-retakeBtn.onclick = takePhoto;
+// PHOTO capture (file input method)
+photoBtn.addEventListener('click', () => capturePhoto());
+retakeBtn.addEventListener('click', () => capturePhoto());
 
-function takePhoto(){
+function capturePhoto() {
   const input = document.createElement('input');
-  input.type='file'; input.accept='image/*'; input.capture='environment';
-  input.onchange = ()=>{
-    if(!input.files[0]) return;
-    photoBlob = input.files[0];
+  input.type = 'file';
+  input.accept = 'image/*';
+  input.capture = 'environment';
+  input.onchange = () => {
+    const file = input.files[0];
+    if (!file) return;
+    photoBlob = file;
     const reader = new FileReader();
-    reader.onload = e=>{
-      photoPreview.src=e.target.result;
-      photoPreview.style.display='block';
-      retakeBtn.style.display='inline-block';
-      status2.textContent='Your dream is ready for the time capsule!';
-      submitBtn.disabled=false;
+    reader.onload = (e) => {
+      photoPreview.src = e.target.result;
+      photoPreview.style.display = 'block';
+      retakeBtn.style.display = 'inline-block';
+      status2.textContent = 'Photo ready!';
+      submitBtn.disabled = false;
     };
-    reader.readAsDataURL(photoBlob);
+    reader.readAsDataURL(file);
   };
   input.click();
 }
 
-// Final Submit downloads photo
-submitBtn.onclick = ()=>{
-  if(!photoBlob) return;
-  const a=document.createElement('a');
-  a.href = URL.createObjectURL(photoBlob);
-  a.download=`${userName}_PhotoConfession.jpg`;
-  document.body.appendChild(a); a.click(); document.body.removeChild(a);
-  status2.textContent='Thank you for submitting!';
-  submitBtn.disabled=true;
-};
+function checkSubmitReady() {
+  submitBtn.disabled = !(recordedBlob && photoBlob);
+}
 
-// Button wiring
+// UPLOAD to Firebase Storage (sequential)
+async function uploadToFirebaseAndReset() {
+  if (!recordedBlob || !photoBlob) return;
+  status2.textContent = 'Uploading...';
+  submitBtn.disabled = true;
+
+  try {
+    // Wait until authenticated
+    await waitForAuth();
+
+    const ts = new Date().toISOString().replace(/[:.]/g,'-');
+    const audioName = `${userName}_AudioConfession_${ts}.mp3`;
+    const photoExt = (photoBlob.type && photoBlob.type.split('/')[1]) ? photoBlob.type.split('/')[1] : 'jpg';
+    const photoName = `${userName}_PhotoConfession_${ts}.${photoExt}`;
+
+    const folderPath = `uploads/${userName.replace(/\s+/g,'_')}`;
+
+    // Upload audio
+    const audioRef = storage.ref(`${folderPath}/${audioName}`);
+    await audioRef.put(recordedBlob, { contentType: recordedBlob.type || 'audio/mp3' });
+
+    // Upload photo
+    const photoRef = storage.ref(`${folderPath}/${photoName}`);
+    await photoRef.put(photoBlob, { contentType: photoBlob.type || 'image/jpeg' });
+
+    // Optional: get download URLs (not required)
+    // const audioURL = await audioRef.getDownloadURL();
+    // const photoURL = await photoRef.getDownloadURL();
+
+    status2.textContent = 'Upload complete! Returning to start...';
+    submitResetTimer = setTimeout(() => resetToIntro(), 5000);
+  } catch (err) {
+    console.error('Upload failed', err);
+    status2.textContent = 'Upload failed. Try again.';
+    submitBtn.disabled = false;
+  }
+}
+
+// helper to wait until firebase auth is ready (anonymous)
+function waitForAuth() {
+  return new Promise((resolve, reject) => {
+    const user = auth.currentUser;
+    if (user) return resolve(user);
+    const unsub = auth.onAuthStateChanged(u => {
+      unsub();
+      if (u) resolve(u); else reject(new Error('Auth failed'));
+    });
+  });
+}
+
+// Final submit handler
+submitBtn.addEventListener('click', uploadToFirebaseAndReset);
+
+// Inactivity overlay
+function resetInactivityTimer(){
+  clearTimeout(inactivityTimer);
+  clearInterval(inactivityCountdownInterval);
+  inactivityOverlay.style.display='none';
+  inactivityCountdown = 5;
+  inactivityTimer = setTimeout(()=>{
+    inactivityOverlay.style.display='flex';
+    inactivityCountdownInterval = setInterval(()=>{
+      inactivityOverlay.textContent = `Are you still there? Returning to START in ${inactivityCountdown}...`;
+      inactivityCountdown--;
+      if(inactivityCountdown<0){
+        clearInterval(inactivityCountdownInterval);
+        resetToIntro();
+      }
+    },1000);
+  },20000);
+}
+['click','keydown','touchstart'].forEach(evt=>{
+  document.addEventListener(evt, resetInactivityTimer, {passive:true});
+});
+resetInactivityTimer();
+
+// wiring recording buttons
 recordBtn.addEventListener('click', startRecording);
 pauseBtn.addEventListener('click', pauseResume);
 stopBtn.addEventListener('click', stopRecording);
+
+}); // DOMContentLoaded end
 </script>
 </body>
 </html>
