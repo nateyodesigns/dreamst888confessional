@@ -358,7 +358,7 @@ function capturePhoto() {
     if (!file) return;
 
     // Add a small delay to ensure the image data is fully available
-    await new Promise(resolve => setTimeout(resolve, 200));
+    await new Promise(resolve => setTimeout(resolve, 1000));
 
     photoBlob = file;
     const reader = new FileReader();
