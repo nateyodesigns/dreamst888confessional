@@ -1,14 +1,13 @@
 <!doctype html>
 <html>
 <head>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.11.0/jszip.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/lamejs@1.2.1/lame.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Bree+Serif&family=IBM+Plex+Mono:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;1,100;1,200;1,300;1,400;1,500;1,600;1,700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;1,100;1,200;1,300;1,400;1,500;1,600;1,700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>Confessional of Future Dreams</title>
+<script src="https://cdn.jsdelivr.net/npm/lamejs@1.2.1/lame.min.js"></script>
 <style>
 body {
   font-family: "IBM Plex Mono", monospace;
@@ -18,7 +17,8 @@ body {
   text-align: center;
   padding: 40px;
 }
-h2 { font-size: 26px; margin-bottom: 20px; }
+h2 { font-size: 36px; margin-bottom: 20px; }
+.instrument-serif-regular { font-family: "Instrument Serif", serif; font-weight: 400; font-style: normal; }
 button {
   font-family: "IBM Plex Mono", monospace;
   background: rgba(255,255,255,0.15);
@@ -37,115 +37,167 @@ button:disabled { opacity: 0.4; cursor: default; }
 .timer { font-size: 18px; margin-top: 12px; }
 audio { display: block; margin: 20px auto; width: 100%; max-width: 400px; }
 .status { margin-top: 12px; font-size: 17px; }
-#photoPreview { display: none; margin-top:12px; max-width:300px; border-radius:10px; }
+#photoPreview { 
+  display: none; 
+  margin: 12px auto 0 auto; /* top 12px, centered horizontally */
+  max-width:300px; 
+  border-radius:10px; 
+  display: block; /* ensure it's block for centering */
+}
+.page { display: none; }
+.page.active { display: block; }
+input[type="text"] {
+  font-family: "IBM Plex Mono", monospace;
+  padding: 10px;
+  font-size: 16px;
+  border-radius: 6px;
+  border: 1px solid rgba(255,255,255,0.4);
+  background: rgba(255,255,255,0.15);
+  color: white;
+  width: 80%;
+  max-width: 300px;
+  margin-top: 12px;
+}
+#audioPrompt {
+  font-family: "Instrument Serif", serif;
+  font-weight: 400;
+  font-style: italic;
+  font-size: 30px;
+  margin: 12px 0;
+}
 </style>
 </head>
 <body>
 <h2>Confessional of Future Dreams</h2>
 
-<div>
-  <button id="recordBtn">Record</button>
-  <button id="pauseBtn" disabled>Pause</button>
-  <button id="stopBtn" disabled>Stop</button>
-  <button id="resetBtn" disabled>Record Again</button>
+<!-- Page 0: Introduction -->
+<div id="page0" class="page active">
+  <p id="introText">An Interactive Community Experience</p>
+  <input type="text" id="userName" placeholder="Start by entering your name" />
+  <br>
+  <button id="introNextBtn" disabled>Next</button>
 </div>
 
-<div class="timer" id="timer">00:00 / 00:30</div>
-<audio id="player" controls></audio>
+<!-- Page 1: Audio Recording -->
+<div id="page1" class="page">
+  <p id="audioDescription">PRESS the record button, then SPEAK to answer the question:</p>
+  <p id="audioPrompt">What dreams do you have for the future?</p>
+  <div>
+    <button id="recordBtn">Record</button>
+    <button id="pauseBtn" disabled>Pause</button>
+    <button id="stopBtn" disabled>Stop</button>
+    <button id="nextBtn" disabled>Next</button>
+  </div>
+  <div class="timer" id="timer">00:00 / 00:30</div>
+  <audio id="player" controls></audio>
+  <div class="status" id="status1"></div>
+</div>
 
-<div style="margin-top:12px">
-  <button id="photoBtn" disabled>Take Picture</button>
+<!-- Page 2: Photo Capture -->
+<div id="page2" class="page">
+  <p id="audioDescription">Take a picture so the Pigeon Historian Scientists can preserve your dream.</p>
+  <button id="photoBtn">Take Picture</button>
   <button id="retakeBtn" style="display:none;">Retake Photo</button>
-</div>
-<img id="photoPreview" />
-
-<div style="margin-top:12px">
+  <br>
+  <img id="photoPreview" />
+  <br>
   <button id="submitBtn" disabled>Submit My Future Dream</button>
+  <div class="status" id="status2"></div>
 </div>
-
-<div class="status" id="status"></div>
 
 <script>
+let userName = '';
 const MAX_SECONDS = 30;
-let mediaRecorder, audioStream, chunks = [];
-let recordedBlob = null, timerInterval = null, seconds = 0;
-let photoBlob = null;
+let mediaRecorder, audioStream, chunks=[], recordedBlob=null, seconds=0, timerInterval=null;
+let photoBlob=null;
 
+// Pages
+const page0 = document.getElementById('page0');
+const page1 = document.getElementById('page1');
+const page2 = document.getElementById('page2');
+
+// Page0 elements
+const userNameInput = document.getElementById('userName');
+const introNextBtn = document.getElementById('introNextBtn');
+
+// Page1 elements
 const recordBtn = document.getElementById('recordBtn');
 const pauseBtn = document.getElementById('pauseBtn');
 const stopBtn = document.getElementById('stopBtn');
-const resetBtn = document.getElementById('resetBtn');
-const submitBtn = document.getElementById('submitBtn');
+const nextBtn = document.getElementById('nextBtn');
 const player = document.getElementById('player');
+const status1 = document.getElementById('status1');
+const timerEl = document.getElementById('timer');
+
+// Page2 elements
 const photoBtn = document.getElementById('photoBtn');
 const retakeBtn = document.getElementById('retakeBtn');
 const photoPreview = document.getElementById('photoPreview');
-const statusEl = document.getElementById('status');
-const timerEl = document.getElementById('timer');
+const submitBtn = document.getElementById('submitBtn');
+const status2 = document.getElementById('status2');
 
-// ----- Audio Functions -----
+// Enable next when name is entered
+userNameInput.addEventListener('input', ()=>{
+  introNextBtn.disabled = userNameInput.value.trim()==='';
+});
+
+// Intro Next button
+introNextBtn.onclick = ()=>{
+  userName = userNameInput.value.trim();
+  page0.classList.remove('active');
+  page1.classList.add('active');
+};
+
+// ----- Audio Recording -----
 function updateTimer() {
   seconds++;
-  if (seconds >= MAX_SECONDS) stopRecording();
-  const mm = String(Math.floor(seconds / 60)).padStart(2,'0');
-  const ss = String(seconds % 60).padStart(2,'0');
+  if(seconds >= MAX_SECONDS) stopRecording();
+  const mm = String(Math.floor(seconds/60)).padStart(2,'0');
+  const ss = String(seconds%60).padStart(2,'0');
   timerEl.textContent = `${mm}:${ss} / 00:30`;
 }
 
 async function startRecording() {
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    alert('Microphone not supported on this device.');
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+    alert('Microphone not supported');
     return;
   }
   try {
-    audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    audioStream = await navigator.mediaDevices.getUserMedia({audio:true});
     mediaRecorder = new MediaRecorder(audioStream);
-  } catch(err) {
-    statusEl.textContent = 'Mic access denied: ' + err.message; 
+  } catch(e){
+    status1.textContent='Mic access denied: '+e.message;
     return;
   }
 
-  chunks = []; seconds = 0;
-  timerInterval = setInterval(updateTimer, 1000);
+  chunks=[]; seconds=0;
+  timerInterval=setInterval(updateTimer,1000);
   mediaRecorder.ondataavailable = e => chunks.push(e.data);
   mediaRecorder.onstop = convertToMp3;
 
   mediaRecorder.start();
-  statusEl.textContent = 'Recording...';
-  recordBtn.disabled = true; pauseBtn.disabled = false; stopBtn.disabled = false;
-  resetBtn.disabled = true; submitBtn.disabled = true; photoBtn.disabled = true;
+  status1.textContent='Recording...';
+  recordBtn.disabled=true; pauseBtn.disabled=false; stopBtn.disabled=false; nextBtn.disabled=true;
 }
 
-function pauseResume() {
-  if (!mediaRecorder) return;
-  if (mediaRecorder.state === 'recording') {
-    mediaRecorder.pause();
-    pauseBtn.textContent = 'Resume'; clearInterval(timerInterval); statusEl.textContent = 'Paused';
-  } else if (mediaRecorder.state === 'paused') {
-    mediaRecorder.resume();
-    pauseBtn.textContent = 'Pause'; timerInterval = setInterval(updateTimer,1000);
-    statusEl.textContent = 'Recording...';
+function pauseResume(){
+  if(!mediaRecorder) return;
+  if(mediaRecorder.state==='recording'){
+    mediaRecorder.pause(); pauseBtn.textContent='Resume'; clearInterval(timerInterval); status1.textContent='Paused';
+  } else if(mediaRecorder.state==='paused'){
+    mediaRecorder.resume(); pauseBtn.textContent='Pause'; timerInterval=setInterval(updateTimer,1000); status1.textContent='Recording...';
   }
 }
 
-function stopRecording() {
-  if (mediaRecorder && (mediaRecorder.state==='recording'||mediaRecorder.state==='paused')) {
-    mediaRecorder.stop(); clearInterval(timerInterval);
-    pauseBtn.disabled = true; stopBtn.disabled = true;
-    photoBtn.disabled = false; // enable take picture now
+function stopRecording(){
+  if(mediaRecorder && (mediaRecorder.state==='recording'||mediaRecorder.state==='paused')){
+    mediaRecorder.stop();
+    clearInterval(timerInterval);
+    pauseBtn.disabled=true; stopBtn.disabled=true;
   }
 }
 
-function resetRecording() {
-  recordedBlob = null; chunks = []; player.src = '';
-  submitBtn.disabled = true; resetBtn.disabled = true;
-  recordBtn.disabled = false; pauseBtn.disabled = true; stopBtn.disabled = true;
-  statusEl.textContent=''; timerEl.textContent='00:00 / 00:30';
-  photoBlob = null; photoPreview.style.display='none'; retakeBtn.style.display='none';
-  photoBtn.disabled = true;
-}
-
-async function convertToMp3() {
+async function convertToMp3(){
   const blob = new Blob(chunks,{type:'audio/webm'});
   const arrayBuffer = await blob.arrayBuffer();
   const audioCtx = new AudioContext();
@@ -155,7 +207,8 @@ async function convertToMp3() {
   const mp3encoder = new lamejs.Mp3Encoder(1, decoded.sampleRate, 128);
   const samples = new Int16Array(channelData.length);
   for(let i=0;i<channelData.length;i++) samples[i] = channelData[i]*32767;
-  const mp3Data = [], chunkSize=1152;
+  const mp3Data = [];
+  const chunkSize = 1152;
   for(let i=0;i<samples.length;i+=chunkSize){
     const sampleChunk = samples.subarray(i,i+chunkSize);
     const mp3buf = mp3encoder.encodeBuffer(sampleChunk);
@@ -166,72 +219,61 @@ async function convertToMp3() {
 
   recordedBlob = new Blob(mp3Data,{type:'audio/mp3'});
   player.src = URL.createObjectURL(recordedBlob);
-  statusEl.textContent = 'Audio recording ready.';
-  resetBtn.disabled=false; recordBtn.disabled=false; pauseBtn.textContent='Pause';
-  if(audioStream) audioStream.getTracks().forEach(t=>t.stop());
+  status1.textContent='Audio ready!';
+  nextBtn.disabled=false;
 
-  checkSubmitReady();
+  if(audioStream) audioStream.getTracks().forEach(t=>t.stop());
 }
 
-// ----- Photo Functions -----
-photoBtn.addEventListener('click', () => capturePhoto());
-retakeBtn.addEventListener('click', () => capturePhoto());
+// Next button: download audio and go to photo page
+nextBtn.onclick = ()=>{
+  if(!recordedBlob) return;
+  const a=document.createElement('a');
+  a.href = URL.createObjectURL(recordedBlob);
+  a.download=`${userName}_AudioConfession.mp3`;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
 
-function capturePhoto() {
+  page1.classList.remove('active'); page2.classList.add('active');
+};
+
+// ----- Photo Capture -----
+photoBtn.onclick = takePhoto;
+retakeBtn.onclick = takePhoto;
+
+function takePhoto(){
   const input = document.createElement('input');
   input.type='file'; input.accept='image/*'; input.capture='environment';
-  input.onchange = () => {
-    const file = input.files[0];
-    if(!file) return;
-    photoBlob = file;
+  input.onchange = ()=>{
+    if(!input.files[0]) return;
+    photoBlob = input.files[0];
     const reader = new FileReader();
-    reader.onload = e => {
+    reader.onload = e=>{
       photoPreview.src=e.target.result;
       photoPreview.style.display='block';
-      statusEl.textContent='Picture ready.';
       retakeBtn.style.display='inline-block';
-      checkSubmitReady();
+      status2.textContent='Photo ready!';
+      submitBtn.disabled=false;
     };
-    reader.readAsDataURL(file);
+    reader.readAsDataURL(photoBlob);
   };
   input.click();
 }
 
-function checkSubmitReady() {
-  submitBtn.disabled = !(recordedBlob && photoBlob);
-}
+// Final Submit downloads photo
+submitBtn.onclick = ()=>{
+  if(!photoBlob) return;
+  const a=document.createElement('a');
+  a.href = URL.createObjectURL(photoBlob);
+  a.download=`${userName}_PhotoConfession.jpg`;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  status2.textContent='Thank you for submitting!';
+  submitBtn.disabled=true;
+};
 
-// ----- Submit -----
-async function submitAndReset() {
-  if (!recordedBlob || !photoBlob) {
-    alert('You must record audio AND take a photo before submitting.');
-    return;
-  }
-
-  const zip = new JSZip();
-  zip.file('MyFutureDream.mp3', recordedBlob);
-  zip.file('MyFutureDreamPhoto.jpg', photoBlob);
-
-  const content = await zip.generateAsync({ type: 'blob' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(content);
-  a.download = 'MyFutureDream.zip';
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-
-  statusEl.textContent = 'Thank you for submitting!';
-  submitBtn.disabled = true;
-
-  setTimeout(() => resetRecording(), 2000);
-}
-
-// ----- Button wiring -----
+// Button wiring
 recordBtn.addEventListener('click', startRecording);
 pauseBtn.addEventListener('click', pauseResume);
 stopBtn.addEventListener('click', stopRecording);
-resetBtn.addEventListener('click', resetRecording);
-submitBtn.addEventListener('click', submitAndReset);
 </script>
 </body>
 </html>
