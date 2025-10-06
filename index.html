@@ -97,12 +97,12 @@ async function startRecording() {
     alert('Microphone not supported on this device.');
     return;
   }
-  try {
+  try { 
     audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    mediaRecorder = new MediaRecorder(audioStream);
-  } catch(err) {
-    statusEl.textContent = 'Mic access denied: ' + err.message;
-    return;
+    mediaRecorder = new MediaRecorder(audioStream); 
+  } catch(err) { 
+    statusEl.textContent = 'Mic access denied: ' + err.message; 
+    return; 
   }
 
   chunks = []; seconds = 0;
@@ -112,36 +112,27 @@ async function startRecording() {
 
   mediaRecorder.start();
   statusEl.textContent = 'Recording...';
-  recordBtn.disabled = true;
-  pauseBtn.disabled = false;
-  stopBtn.disabled = false;
-  resetBtn.disabled = true;
-  submitBtn.disabled = true;
-  photoBtn.disabled = true;
+  recordBtn.disabled = true; pauseBtn.disabled = false; stopBtn.disabled = false;
+  resetBtn.disabled = true; submitBtn.disabled = true; photoBtn.disabled = true;
 }
 
 function pauseResume() {
   if (!mediaRecorder) return;
   if (mediaRecorder.state === 'recording') {
     mediaRecorder.pause();
-    pauseBtn.textContent = 'Resume';
-    clearInterval(timerInterval);
-    statusEl.textContent = 'Paused';
+    pauseBtn.textContent = 'Resume'; clearInterval(timerInterval); statusEl.textContent = 'Paused';
   } else if (mediaRecorder.state === 'paused') {
     mediaRecorder.resume();
-    pauseBtn.textContent = 'Pause';
-    timerInterval = setInterval(updateTimer,1000);
+    pauseBtn.textContent = 'Pause'; timerInterval = setInterval(updateTimer,1000);
     statusEl.textContent = 'Recording...';
   }
 }
 
 function stopRecording() {
   if (mediaRecorder && (mediaRecorder.state==='recording'||mediaRecorder.state==='paused')) {
-    mediaRecorder.stop();
-    clearInterval(timerInterval);
-    pauseBtn.disabled = true;
-    stopBtn.disabled = true;
-    photoBtn.disabled = false;
+    mediaRecorder.stop(); clearInterval(timerInterval);
+    pauseBtn.disabled = true; stopBtn.disabled = true;
+    photoBtn.disabled = false; // enable take photo
   }
 }
 
@@ -157,41 +148,28 @@ function resetRecording() {
 async function convertToMp3() {
   const blob = new Blob(chunks,{type:'audio/webm'});
   const arrayBuffer = await blob.arrayBuffer();
-  const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  const audioCtx = new AudioContext();
+  const decoded = await audioCtx.decodeAudioData(arrayBuffer);
+  const channelData = decoded.getChannelData(0);
 
-  try {
-    await audioCtx.resume();
-    const decoded = await audioCtx.decodeAudioData(arrayBuffer);
-    const channelData = decoded.getChannelData(0);
-
-    const mp3encoder = new lamejs.Mp3Encoder(1, decoded.sampleRate, 128);
-    const samples = new Int16Array(channelData.length);
-    for(let i=0;i<channelData.length;i++) samples[i] = channelData[i]*32767;
-
-    const mp3Data = [];
-    const chunkSize=1152;
-    for(let i=0;i<samples.length;i+=chunkSize){
-      const sampleChunk = samples.subarray(i,i+chunkSize);
-      const mp3buf = mp3encoder.encodeBuffer(sampleChunk);
-      if(mp3buf.length>0) mp3Data.push(mp3buf);
-    }
-    const end = mp3encoder.flush();
-    if(end.length>0) mp3Data.push(end);
-
-    recordedBlob = new Blob(mp3Data,{type:'audio/mp3'});
-    player.src = URL.createObjectURL(recordedBlob);
-    statusEl.textContent = 'Audio recording ready.';
-    resetBtn.disabled=false;
-    recordBtn.disabled=false;
-    pauseBtn.textContent='Pause';
-    checkSubmitReady();
-  } catch(err) {
-    console.error('MP3 conversion failed:', err);
-    statusEl.textContent = 'Audio recording failed. Try again.';
-    recordedBlob = null;
-  } finally {
-    if(audioStream) audioStream.getTracks().forEach(t=>t.stop());
+  const mp3encoder = new lamejs.Mp3Encoder(1, decoded.sampleRate, 128);
+  const samples = new Int16Array(channelData.length);
+  for(let i=0;i<channelData.length;i++) samples[i] = channelData[i]*32767;
+  const mp3Data = [], chunkSize=1152;
+  for(let i=0;i<samples.length;i+=chunkSize){
+    const sampleChunk = samples.subarray(i,i+chunkSize);
+    const mp3buf = mp3encoder.encodeBuffer(sampleChunk);
+    if(mp3buf.length>0) mp3Data.push(mp3buf);
   }
+  const end = mp3encoder.flush();
+  if(end.length>0) mp3Data.push(end);
+
+  recordedBlob = new Blob(mp3Data,{type:'audio/mp3'});
+  player.src = URL.createObjectURL(recordedBlob);
+  statusEl.textContent = 'Audio recording ready.';
+  resetBtn.disabled=false; recordBtn.textContent='Record'; recordBtn.disabled=false; pauseBtn.textContent='Pause';
+  if(audioStream) audioStream.getTracks().forEach(t=>t.stop());
+  checkSubmitReady();
 }
 
 // ----- Photo Functions -----
@@ -209,8 +187,8 @@ function capturePhoto() {
     reader.onload = e => {
       photoPreview.src = e.target.result;
       photoPreview.style.display = 'block';
-      statusEl.textContent = 'Picture ready.';
       retakeBtn.style.display = 'inline-block';
+      statusEl.textContent = 'Picture ready.';
       checkSubmitReady();
     };
     reader.readAsDataURL(file);
@@ -224,12 +202,32 @@ function checkSubmitReady() {
 
 // ----- Submit -----
 async function submitAndReset() {
-  if (!recordedBlob && !photoBlob) return;
+  if (!recordedBlob || !photoBlob) return;
 
   statusEl.textContent = 'Thank you for submitting!';
   submitBtn.disabled = true;
 
   const zip = new JSZip();
-  if(recordedBlob) zip.file('MyFutureDream.mp3', recordedBlob);
-  if(photoBlob) zip.file('MyFutureDreamPhoto.jpg', photoBlob);
+  zip.file('MyFutureDream.mp3', recordedBlob);
+  zip.file('MyFutureDreamPhoto.jpg', photoBlob);
 
+  const content = await zip.generateAsync({ type: 'blob' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(content);
+  a.download = 'MyFutureDream.zip';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+
+  setTimeout(() => resetRecording(), 2000);
+}
+
+// ----- Button wiring -----
+recordBtn.addEventListener('click', startRecording);
+pauseBtn.addEventListener('click', pauseResume);
+stopBtn.addEventListener('click', stopRecording);
+resetBtn.addEventListener('click', resetRecording);
+submitBtn.addEventListener('click', submitAndReset);
+</script>
+</body>
+</html>
