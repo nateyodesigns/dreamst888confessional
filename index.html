@@ -2,13 +2,13 @@
 <html>
 <head>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.11.0/jszip.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/lamejs@1.2.1/lame.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bree+Serif&family=IBM+Plex+Mono:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;1,100;1,200;1,300;1,400;1,500;1,600;1,700&display=swap" rel="stylesheet">
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>Confessional of Future Dreams</title>
-<script src="https://cdn.jsdelivr.net/npm/lamejs@1.2.1/lame.min.js"></script>
 <style>
 body {
   font-family: "IBM Plex Mono", monospace;
@@ -97,9 +97,13 @@ async function startRecording() {
     alert('Microphone not supported on this device.');
     return;
   }
-  try { audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        mediaRecorder = new MediaRecorder(audioStream); } 
-  catch(err) { statusEl.textContent = 'Mic access denied: ' + err.message; return; }
+  try {
+    audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    mediaRecorder = new MediaRecorder(audioStream);
+  } catch(err) {
+    statusEl.textContent = 'Mic access denied: ' + err.message;
+    return;
+  }
 
   chunks = []; seconds = 0;
   timerInterval = setInterval(updateTimer, 1000);
@@ -108,27 +112,36 @@ async function startRecording() {
 
   mediaRecorder.start();
   statusEl.textContent = 'Recording...';
-  recordBtn.disabled = true; pauseBtn.disabled = false; stopBtn.disabled = false;
-  resetBtn.disabled = true; submitBtn.disabled = true; photoBtn.disabled = true;
+  recordBtn.disabled = true;
+  pauseBtn.disabled = false;
+  stopBtn.disabled = false;
+  resetBtn.disabled = true;
+  submitBtn.disabled = true;
+  photoBtn.disabled = true;
 }
 
 function pauseResume() {
   if (!mediaRecorder) return;
   if (mediaRecorder.state === 'recording') {
     mediaRecorder.pause();
-    pauseBtn.textContent = 'Resume'; clearInterval(timerInterval); statusEl.textContent = 'Paused';
+    pauseBtn.textContent = 'Resume';
+    clearInterval(timerInterval);
+    statusEl.textContent = 'Paused';
   } else if (mediaRecorder.state === 'paused') {
     mediaRecorder.resume();
-    pauseBtn.textContent = 'Pause'; timerInterval = setInterval(updateTimer,1000);
+    pauseBtn.textContent = 'Pause';
+    timerInterval = setInterval(updateTimer,1000);
     statusEl.textContent = 'Recording...';
   }
 }
 
 function stopRecording() {
   if (mediaRecorder && (mediaRecorder.state==='recording'||mediaRecorder.state==='paused')) {
-    mediaRecorder.stop(); clearInterval(timerInterval);
-    pauseBtn.disabled = true; stopBtn.disabled = true;
-    photoBtn.disabled = false; // enable take picture now
+    mediaRecorder.stop();
+    clearInterval(timerInterval);
+    pauseBtn.disabled = true;
+    stopBtn.disabled = true;
+    photoBtn.disabled = false;
   }
 }
 
@@ -144,32 +157,46 @@ function resetRecording() {
 async function convertToMp3() {
   const blob = new Blob(chunks,{type:'audio/webm'});
   const arrayBuffer = await blob.arrayBuffer();
-  const audioCtx = new AudioContext();
-  const decoded = await audioCtx.decodeAudioData(arrayBuffer);
-  const channelData = decoded.getChannelData(0);
+  const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
-  const mp3encoder = new lamejs.Mp3Encoder(1, decoded.sampleRate, 128);
-  const samples = new Int16Array(channelData.length);
-  for(let i=0;i<channelData.length;i++) samples[i] = channelData[i]*32767;
-  const mp3Data = [], chunkSize=1152;
-  for(let i=0;i<samples.length;i+=chunkSize){
-    const sampleChunk = samples.subarray(i,i+chunkSize);
-    const mp3buf = mp3encoder.encodeBuffer(sampleChunk);
-    if(mp3buf.length>0) mp3Data.push(mp3buf);
+  try {
+    await audioCtx.resume();
+    const decoded = await audioCtx.decodeAudioData(arrayBuffer);
+    const channelData = decoded.getChannelData(0);
+
+    const mp3encoder = new lamejs.Mp3Encoder(1, decoded.sampleRate, 128);
+    const samples = new Int16Array(channelData.length);
+    for(let i=0;i<channelData.length;i++) samples[i] = channelData[i]*32767;
+
+    const mp3Data = [];
+    const chunkSize=1152;
+    for(let i=0;i<samples.length;i+=chunkSize){
+      const sampleChunk = samples.subarray(i,i+chunkSize);
+      const mp3buf = mp3encoder.encodeBuffer(sampleChunk);
+      if(mp3buf.length>0) mp3Data.push(mp3buf);
+    }
+    const end = mp3encoder.flush();
+    if(end.length>0) mp3Data.push(end);
+
+    recordedBlob = new Blob(mp3Data,{type:'audio/mp3'});
+    player.src = URL.createObjectURL(recordedBlob);
+    statusEl.textContent = 'Audio recording ready.';
+    resetBtn.disabled=false;
+    recordBtn.disabled=false;
+    pauseBtn.textContent='Pause';
+    checkSubmitReady();
+  } catch(err) {
+    console.error('MP3 conversion failed:', err);
+    statusEl.textContent = 'Audio recording failed. Try again.';
+    recordedBlob = null;
+  } finally {
+    if(audioStream) audioStream.getTracks().forEach(t=>t.stop());
   }
-  const end = mp3encoder.flush();
-  if(end.length>0) mp3Data.push(end);
-
-  recordedBlob = new Blob(mp3Data,{type:'audio/mp3'});
-  player.src = URL.createObjectURL(recordedBlob);
-  statusEl.textContent = 'Audio recording ready.';
-  resetBtn.disabled=false; recordBtn.textContent='Record'; recordBtn.disabled=false; pauseBtn.textContent='Pause';
-  if(audioStream) audioStream.getTracks().forEach(t=>t.stop());
 }
 
 // ----- Photo Functions -----
-photoBtn.addEventListener('click', () => capturePhoto());
-retakeBtn.addEventListener('click', () => capturePhoto());
+photoBtn.addEventListener('click', capturePhoto);
+retakeBtn.addEventListener('click', capturePhoto);
 
 function capturePhoto() {
   const input = document.createElement('input');
@@ -180,10 +207,10 @@ function capturePhoto() {
     photoBlob = file;
     const reader = new FileReader();
     reader.onload = e => {
-      photoPreview.src=e.target.result;
-      photoPreview.style.display='block';
-      statusEl.textContent='Picture ready.';
-      retakeBtn.style.display='inline-block';
+      photoPreview.src = e.target.result;
+      photoPreview.style.display = 'block';
+      statusEl.textContent = 'Picture ready.';
+      retakeBtn.style.display = 'inline-block';
       checkSubmitReady();
     };
     reader.readAsDataURL(file);
@@ -203,33 +230,6 @@ async function submitAndReset() {
   submitBtn.disabled = true;
 
   const zip = new JSZip();
+  if(recordedBlob) zip.file('MyFutureDream.mp3', recordedBlob);
+  if(photoBlob) zip.file('MyFutureDreamPhoto.jpg', photoBlob);
 
-  if (recordedBlob) {
-    zip.file('MyFutureDream.mp3', recordedBlob);
-  }
-
-  if (photoBlob) {
-    zip.file('MyFutureDreamPhoto.jpg', photoBlob);
-  }
-
-  // Generate the zip and trigger download
-  const content = await zip.generateAsync({ type: 'blob' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(content);
-  a.download = 'MyFutureDream.zip';
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-
-  setTimeout(() => resetRecording(), 5000);
-}
-
-// ----- Button wiring -----
-recordBtn.addEventListener('click', startRecording);
-pauseBtn.addEventListener('click', pauseResume);
-stopBtn.addEventListener('click', stopRecording);
-resetBtn.addEventListener('click', resetRecording);
-submitBtn.addEventListener('click', submitAndReset);
-</script>
-</body>
-</html>
