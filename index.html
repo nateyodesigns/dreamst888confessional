@@ -352,11 +352,17 @@ function capturePhoto() {
   input.type = 'file';
   input.accept = 'image/*';
   input.capture = 'environment';
-  input.onchange = () => {
+
+  input.onchange = async () => {
     const file = input.files[0];
     if (!file) return;
+
+    // Add a small delay to ensure the image data is fully available
+    await new Promise(resolve => setTimeout(resolve, 200));
+
     photoBlob = file;
     const reader = new FileReader();
+
     reader.onload = (e) => {
       photoPreview.src = e.target.result;
       photoPreview.style.display = 'block';
@@ -364,10 +370,13 @@ function capturePhoto() {
       status2.textContent = 'Photo ready!';
       submitBtn.disabled = false;
     };
+
     reader.readAsDataURL(file);
   };
+
   input.click();
 }
+
 
 function checkSubmitReady() {
   submitBtn.disabled = !(recordedBlob && photoBlob);
