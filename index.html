@@ -97,12 +97,12 @@ async function startRecording() {
     alert('Microphone not supported on this device.');
     return;
   }
-  try { 
+  try {
     audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    mediaRecorder = new MediaRecorder(audioStream); 
-  } catch(err) { 
+    mediaRecorder = new MediaRecorder(audioStream);
+  } catch(err) {
     statusEl.textContent = 'Mic access denied: ' + err.message; 
-    return; 
+    return;
   }
 
   chunks = []; seconds = 0;
@@ -132,7 +132,7 @@ function stopRecording() {
   if (mediaRecorder && (mediaRecorder.state==='recording'||mediaRecorder.state==='paused')) {
     mediaRecorder.stop(); clearInterval(timerInterval);
     pauseBtn.disabled = true; stopBtn.disabled = true;
-    photoBtn.disabled = false; // enable take photo
+    photoBtn.disabled = false; // enable take picture now
   }
 }
 
@@ -167,14 +167,15 @@ async function convertToMp3() {
   recordedBlob = new Blob(mp3Data,{type:'audio/mp3'});
   player.src = URL.createObjectURL(recordedBlob);
   statusEl.textContent = 'Audio recording ready.';
-  resetBtn.disabled=false; recordBtn.textContent='Record'; recordBtn.disabled=false; pauseBtn.textContent='Pause';
+  resetBtn.disabled=false; recordBtn.disabled=false; pauseBtn.textContent='Pause';
   if(audioStream) audioStream.getTracks().forEach(t=>t.stop());
+
   checkSubmitReady();
 }
 
 // ----- Photo Functions -----
-photoBtn.addEventListener('click', capturePhoto);
-retakeBtn.addEventListener('click', capturePhoto);
+photoBtn.addEventListener('click', () => capturePhoto());
+retakeBtn.addEventListener('click', () => capturePhoto());
 
 function capturePhoto() {
   const input = document.createElement('input');
@@ -185,10 +186,10 @@ function capturePhoto() {
     photoBlob = file;
     const reader = new FileReader();
     reader.onload = e => {
-      photoPreview.src = e.target.result;
-      photoPreview.style.display = 'block';
-      retakeBtn.style.display = 'inline-block';
-      statusEl.textContent = 'Picture ready.';
+      photoPreview.src=e.target.result;
+      photoPreview.style.display='block';
+      statusEl.textContent='Picture ready.';
+      retakeBtn.style.display='inline-block';
       checkSubmitReady();
     };
     reader.readAsDataURL(file);
@@ -202,10 +203,10 @@ function checkSubmitReady() {
 
 // ----- Submit -----
 async function submitAndReset() {
-  if (!recordedBlob || !photoBlob) return;
-
-  statusEl.textContent = 'Thank you for submitting!';
-  submitBtn.disabled = true;
+  if (!recordedBlob || !photoBlob) {
+    alert('You must record audio AND take a photo before submitting.');
+    return;
+  }
 
   const zip = new JSZip();
   zip.file('MyFutureDream.mp3', recordedBlob);
@@ -218,6 +219,9 @@ async function submitAndReset() {
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
+
+  statusEl.textContent = 'Thank you for submitting!';
+  submitBtn.disabled = true;
 
   setTimeout(() => resetRecording(), 2000);
 }
