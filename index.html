@@ -80,7 +80,7 @@ input[type="text"] {
 
 <!-- Page 1: Audio Recording -->
 <div id="page1" class="page">
-  <p id="audioDescription">PRESS the record button, then SPEAK to answer the question:</p>
+  <p id="audioDescription">🔴 PRESS the record button, then 🗣️ SPEAK to answer the question:</p>
   <p id="audioPrompt">What dreams do you have for the future?</p>
   <div>
     <button id="recordBtn">Record</button>
@@ -95,7 +95,7 @@ input[type="text"] {
 
 <!-- Page 2: Photo Capture -->
 <div id="page2" class="page">
-  <p id="audioDescription">Take a picture so the Pigeon Historian Scientists can preserve your dream.</p>
+  <p id="audioDescription">📸 Take a picture so the Pigeon Historian Scientists can preserve your dream.</p>
   <button id="photoBtn">Take Picture</button>
   <button id="retakeBtn" style="display:none;">Retake Photo</button>
   <br>
@@ -251,7 +251,7 @@ function takePhoto(){
       photoPreview.src=e.target.result;
       photoPreview.style.display='block';
       retakeBtn.style.display='inline-block';
-      status2.textContent='Photo ready!';
+      status2.textContent='Your dream is ready for the time capsule!';
       submitBtn.disabled=false;
     };
     reader.readAsDataURL(photoBlob);
